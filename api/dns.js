@@ -65,8 +65,6 @@ async function check() {
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  // A few seconds of CDN caching so the endpoint cannot be used to hammer DNS servers.
-  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5');
   res.status(200).json(await check());
 };
 module.exports.check = check;
