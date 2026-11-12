@@ -12,6 +12,5 @@ Live at https://procoenv.vercel.app
   public resolvers over plain DNS.
 - `vercel.json`: runs functions in Paris (`cdg1`).
 
-Deploy with `vercel deploy --prod`. `procoenv.vercel.app` is an alias attached to one
-deployment, so after deploying move it with
-`vercel alias set <deployment-url> procoenv.vercel.app`.
+Deploy with `vercel deploy --prod`. `procoenv.vercel.app` is a domain of the Vercel
+project, so it follows the latest production deployment.
