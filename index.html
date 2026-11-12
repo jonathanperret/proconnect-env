@@ -103,11 +103,20 @@
 
   /* Without a backend: dns-lg's raw answer from one authoritative server, collapsed */
   #lg { margin-top: 16px; text-align: center; }
+  /* A pill with an arrow that turns when open, so it reads as something to click */
   #lg summary {
-    display: inline-block; cursor: pointer; font-size: 11px; letter-spacing: .06em;
-    text-transform: uppercase; color: var(--muted);
+    display: inline-block; max-width: 100%; padding: 5px 14px;
+    border: 1px solid var(--border); border-radius: 14px;
+    background: var(--card); cursor: pointer; list-style: none;
+    font-size: 12px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere;
   }
-  #lg summary:hover { color: var(--text); }
+  #lg summary::-webkit-details-marker { display: none; }
+  #lg summary::before {
+    content: '▶'; display: inline-block; margin-right: 7px; font-size: .8em;
+    transition: transform .2s;
+  }
+  #lg[open] summary::before { transform: rotate(90deg); }
+  #lg summary:hover { color: var(--text); border-color: var(--muted); }
   #lg iframe {
     display: block; width: 100%; height: 190px; margin-top: 8px;
     border: 1px solid var(--border); border-radius: 8px; background: #fff;
@@ -194,7 +203,7 @@
 
   <div id="rows">
     <details id="lg" hidden>
-      <summary>Réponse brute de <span class="lg-server"></span>, serveur faisant autorité</summary>
+      <summary>Afficher la réponse brute de <span class="lg-server"></span> (serveur faisant autorité)</summary>
       <iframe id="lg-frame" title="Réponse d'un serveur faisant autorité"></iframe>
       <div class="lg-note">Obtenue via dns.bortzmeyer.org, service externe ; non comptée ci-dessus.</div>
     </details>
