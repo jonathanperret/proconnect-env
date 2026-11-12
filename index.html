@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Environnement actif</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1b1f24; --muted: #667085; --border: #d5dae1;
+    --accent: #000091; --accent-soft: #ececfe; --on-accent: #fff; --err: #ce0500; --warn: #b34000;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --card: #1e2126; --text: #e8eaed; --muted: #9aa3b0; --border: #3a404a;
+      --accent: #8585f6; --accent-soft: #25254d; --on-accent: #14161a; --err: #ff5655; --warn: #fc9a5b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0; display: grid; place-items: center; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { width: 100%; max-width: 640px; padding: 24px 16px; cursor: pointer; }
+
+  /* Source: the DNS name */
+  .source { text-align: center; position: relative; z-index: 1; } /* above the needle */
+  .source span {
+    display: inline-block; max-width: 100%; padding: 8px 16px; border-radius: 999px;
+    background: var(--card); border: 2px solid var(--accent); overflow-wrap: anywhere;
+    font: 600 clamp(13px, 3.4vw, 16px) ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* The switch */
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .track { stroke: var(--border); stroke-width: 3; stroke-dasharray: 2 9; stroke-linecap: round; }
+  .arm { transform-box: view-box; transform-origin: 200px 0; } /* angle is driven from JS */
+  .arm polygon, .pivot { fill: var(--accent); stroke-linejoin: round; transition: fill .3s; }
+  .pivot-cap { fill: var(--card); }
+  svg[data-active="none"] .arm polygon { fill: var(--muted); }
+
+  /* The two environments */
+  .envs { display: grid; grid-template-columns: 1fr 1fr; }
+  .slot { padding: 0 8px; }
+  .env {
+    text-align: center; padding: 20px 8px 18px; border-radius: 14px;
+    background: var(--card); border: 2px dashed var(--border);
+    transition: background .3s, border-color .3s, opacity .3s;
+  }
+  .env .num {
+    font-size: clamp(56px, 20vw, 120px); font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums; color: var(--muted); transition: color .3s;
+  }
+  .env .role {
+    display: inline-block; margin-top: 12px; padding: 4px 12px; border-radius: 999px;
+    font-size: clamp(12px, 3vw, 15px); font-weight: 600;
+    background: var(--border); color: var(--text); transition: background .3s, color .3s;
+  }
+  .env.active { border: 2px solid var(--accent); background: var(--accent-soft); }
+  .env.active .num { color: var(--accent); }
+  .env.active .role { background: var(--accent); color: var(--on-accent); }
+  .env.pending { opacity: .6; }
+
+  #error { margin-top: 16px; text-align: center; color: var(--err); font-size: 15px; overflow-wrap: anywhere; }
+
+  /* Per-server answers */
+  #sources { margin-top: 24px; text-align: center; }
+  #summary { min-height: 1.4em; font-size: 14px; line-height: 1.4; }
+  #summary.warn { color: var(--warn); font-weight: 600; }
+  .group { margin-top: 14px; }
+  .group-title { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .chips {
+    list-style: none; margin: 6px 0 0; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+  }
+  .chips li {
+    display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 10px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--border); color: var(--muted); font-size: 12px;
+    max-width: 100%; overflow-wrap: anywhere;
+  }
+  .chips .val { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .chips li.ok .val { color: var(--accent); }
+  .chips li.diff { border-color: var(--warn); }
+  .chips li.diff .val { color: var(--warn); }
+  .chips li.fail { opacity: .6; }
+  .chips li.fail .val { color: var(--err); }
+
+  #age {
+    margin-top: 16px; min-height: 1.4em; text-align: center; color: var(--muted);
+    font-size: 13px; line-height: 1.4; font-variant-numeric: tabular-nums;
+  }
+</style>
+</head>
+<body>
+<main id="main" title="Cliquer pour revérifier">
+  <div class="source"><span>federation.proconnect.gouv.fr</span></div>
+
+  <svg id="switch" viewBox="0 0 400 100" data-active="none" aria-hidden="true">
+    <line class="track" x1="200" y1="0" x2="100" y2="100"/>
+    <line class="track" x1="200" y1="0" x2="300" y2="100"/>
+    <g class="arm">
+      <!-- needle: short counterweight tail above the pivot, long taper to a point -->
+      <polygon points="195.5,-16 204.5,-16 206.5,0 200,138 193.5,0"/>
+    </g>
+    <circle class="pivot" cx="200" cy="0" r="10"/>
+    <circle class="pivot-cap" cx="200" cy="0" r="3.5"/>
+  </svg>
+
+  <div class="envs">
+    <div class="slot"><div class="env pending" data-env="02">
+      <div class="num">02</div><div class="role">…</div>
+    </div></div>
+    <div class="slot"><div class="env pending" data-env="12">
+      <div class="num">12</div><div class="role">…</div>
+    </div></div>
+  </div>
+
+  <div id="error" hidden></div>
+
+  <div id="sources">
+    <div id="summary"></div>
+    <div id="groups"></div>
+  </div>
+
+  <div id="age"></div>
+</main>
+
+<script>
+const NAME = 'federation.proconnect.gouv.fr';
+const MIN_SUSPENSE_MS = 2000;
+const TIMEOUT_MS = 5000;
+
+// Server-side half of the check (api/dns.js): authoritative name servers and public
+// resolvers a browser cannot query. A local copy of this page uses the deployed one.
+const BACKEND_URL = location.protocol === 'file:' ? 'https://procoenv.vercel.app/api/dns' : '/api/dns';
+const BACKEND_TIMEOUT_MS = 9000;
+const REGION_NAMES = { cdg1: 'Paris', fra1: 'Francfort', dub1: 'Dublin', lhr1: 'Londres', iad1: 'Washington' };
+
+// Public DNS-over-HTTPS services that answer cross-origin requests from a browser
+// (checked by probing ~50 of them; most public resolvers do not send CORS headers).
+// Default format is RFC 8484 wire format; `json: true` uses the Google-style JSON API.
+const RESOLVERS = [
+  { label: 'Google',        url: 'https://dns.google/dns-query' },
+  { label: 'Cloudflare',    url: 'https://cloudflare-dns.com/dns-query' },
+  { label: 'Quad9',         url: 'https://dns.quad9.net/dns-query' },
+  { label: 'DNS4EU',        url: 'https://unfiltered.joindns4.eu/dns-query' },
+  { label: 'CZ.NIC',        url: 'https://odvr.nic.cz/doh' },
+  { label: 'Control D',     url: 'https://freedns.controld.com/p0' },
+  { label: 'CleanBrowsing', url: 'https://doh.cleanbrowsing.org/doh/security-filter/' },
+  { label: 'IIJ',           url: 'https://public.dns.iij.jp/dns-query' },
+  { label: 'Alibaba',       url: 'https://dns.alidns.com/resolve', json: true },
+  { label: 'DNS.SB',        url: 'https://doh.dns.sb/dns-query' },
+  { label: 'doh.li',        url: 'https://doh.li/dns-query' },
+  { label: 'seby.io',       url: 'https://doh.seby.io/dns-query' },
+  { label: 'tiar.app',      url: 'https://doh.tiar.app/dns-query' },
+];
+
+const $ = id => document.getElementById(id);
+const strip = s => s.replace(/\.$/, '');
+const cards = [...document.querySelectorAll('.env')];   // [left, right]
+const envOf = target => (target.match(/production(\d+)/) || [])[1];
+
+// --- DNS begin
+const TYPE_CNAME = 5;
+
+// A DNS query for NAME/CNAME, base64url-encoded for the ?dns= parameter.
+function buildQuery(name) {
+  const bytes = [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0];            // header: RD set, 1 question
+  for (const label of name.split('.')) bytes.push(label.length, ...[...label].map(c => c.charCodeAt(0)));
+  bytes.push(0, 0, TYPE_CNAME, 0, 1);                             // root, type, class IN
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Reads a (possibly compressed) domain name; returns [name, offset after it].
+function readName(buf, off) {
+  const labels = [];
+  let end = null;
+  for (let hops = 0; ; ) {
+    const len = buf[off];
+    if (len === undefined) throw new Error('réponse tronquée');
+    if (len === 0) { off++; break; }
+    if ((len & 0xc0) === 0xc0) {
+      if (end === null) end = off + 2;
+      if (++hops > 20) throw new Error('réponse invalide');
+      off = ((len & 0x3f) << 8) | buf[off + 1];
+      continue;
+    }
+    labels.push(String.fromCharCode(...buf.subarray(off + 1, off + 1 + len)));
+    off += 1 + len;
+  }
+  return [labels.join('.'), end ?? off];
+}
+
+function parseWire(buf) {
+  if (buf.length < 12) throw new Error('réponse tronquée');
+  const u16 = o => (buf[o] << 8) | buf[o + 1];
+  const questions = u16(4), count = u16(6);
+  let off = 12;
+  for (let i = 0; i < questions; i++) { [, off] = readName(buf, off); off += 4; }
+  const answers = [];
+  for (let i = 0; i < count; i++) {
+    let name; [name, off] = readName(buf, off);
+    const type = u16(off), rdlength = u16(off + 8);
+    off += 10;
+    answers.push({ name, type, data: type === TYPE_CNAME ? readName(buf, off)[0] : null });
+    off += rdlength;
+  }
+  return { status: buf[3] & 15, answers };
+}
+// --- DNS end
+
+const WIRE_QUERY = buildQuery(NAME);
+
+async function fetchWithTimeout(url, ms, init) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await fetch(url, { cache: 'no-store', signal: ctl.signal, ...init });
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? 'délai dépassé' : e.message);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Asks one service from the browser; resolves to the CNAME target, rejects if there is no usable answer.
+async function lookup(r) {
+  const res = await fetchWithTimeout(
+    r.json ? `${r.url}?name=${NAME}&type=CNAME` : `${r.url}?dns=${WIRE_QUERY}`, TIMEOUT_MS,
+    { headers: { accept: r.json ? 'application/dns-json' : 'application/dns-message' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  let status, answers;
+  if (r.json) {
+    const d = await res.json();
+    status = d.Status;
+    answers = (d.Answer || []).map(a => ({ name: strip(a.name), type: a.type, data: strip(String(a.data)) }));
+  } else {
+    ({ status, answers } = parseWire(new Uint8Array(await res.arrayBuffer())));
+  }
+  if (status !== 0) throw new Error(`statut DNS ${status}`);
+  const cname = answers.find(a => a.type === TYPE_CNAME && a.name.toLowerCase() === NAME);
+  if (!cname) throw new Error('pas de CNAME');
+  return cname.data.toLowerCase();
+}
+
+// Every answer is a "source": { group, label, host, target } or { group, label, host, error }.
+// Groups: 'auth' (authoritative servers), 'browser' and 'backend' (public resolvers).
+const browserSources = () => Promise.all(RESOLVERS.map(async r => {
+  const source = { group: 'browser', label: r.label, host: new URL(r.url).host };
+  try { return { ...source, target: await lookup(r) }; }
+  catch (e) { return { ...source, error: e.message }; }
+}));
+
+async function backendSources() {
+  try {
+    const res = await fetchWithTimeout(BACKEND_URL, BACKEND_TIMEOUT_MS);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return { region: data.region,
+             sources: data.sources.map(s => ({ ...s, group: s.group === 'auth' ? 'auth' : 'backend' })) };
+  } catch (e) {
+    return { region: null, sources: [{ group: 'backend', label: 'Vercel', host: BACKEND_URL, error: e.message }] };
+  }
+}
+
+// The needle is a spring chasing a target angle, so its motion is always continuous.
+// - Waiting: a soft, critically damped spring follows a target that oscillates
+//   around the centre, which reads as a lazy pendulum swing.
+// - Settling: a much stiffer, underdamped spring yanks the needle onto the chosen
+//   environment; it overshoots and rings a few times before coming to rest.
+const arm = document.querySelector('.arm');
+const SWAY = { stiffness: 22, ratio: 1 };       // ratio 1 = critically damped
+const SNAP = { stiffness: 260, ratio: 0.4 };    // lower ratio = more ringing
+// The soft spring lags its target, so the visible swing is about half of SWAY_DEG.
+const SWAY_DEG = 60, SWAY_PERIOD_S = 1.3;
+let angle = 0, velocity = 0, restAngle = 0, swaying = false, swayStart = 0, lastFrame = null;
+
+function moveArm(deg, sway) {
+  restAngle = deg;
+  if (sway && !swaying) swayStart = performance.now();
+  swaying = sway;
+  if (lastFrame === null) requestAnimationFrame(frame);
+}
+
+function frame(now) {
+  const elapsed = Math.min((now - (lastFrame ?? now)) / 1000, 0.05);
+  lastFrame = now;
+  const { stiffness, ratio } = swaying ? SWAY : SNAP;
+  const damping = 2 * ratio * Math.sqrt(stiffness);
+  const target = swaying
+    ? SWAY_DEG * Math.sin(2 * Math.PI * (now - swayStart) / 1000 / SWAY_PERIOD_S)
+    : restAngle;
+  // Small fixed sub-steps keep the stiff spring stable whatever the frame rate.
+  for (let left = elapsed; left > 0; left -= 0.004) {
+    const dt = Math.min(left, 0.004);
+    velocity += (stiffness * (target - angle) - damping * velocity) * dt;
+    angle += velocity * dt;
+  }
+  if (!swaying && Math.abs(target - angle) < 0.02 && Math.abs(velocity) < 0.02) {
+    angle = target; velocity = 0; lastFrame = null;
+  } else {
+    requestAnimationFrame(frame);
+  }
+  arm.style.transform = `rotate(${angle}deg)`;
+}
+
+// active: an env number present on the page, or null (unknown / pending)
+function render(active, pending, error) {
+  const idx = cards.findIndex(c => c.dataset.env === active);
+  $('switch').dataset.active = ['left', 'right'][idx] || 'none';
+  moveArm([45, -45][idx] ?? 0, !!pending);
+  cards.forEach((card, i) => {
+    card.classList.toggle('active', i === idx);
+    card.classList.toggle('pending', idx < 0);
+    card.querySelector('.role').textContent =
+      idx < 0 ? (pending ? '…' : '?') : i === idx ? 'Environnement actif' : 'Environnement PRA';
+  });
+  $('error').hidden = !error;
+  $('error').textContent = error || '';
+}
+
+// One chip per DNS server, grouped. While a check runs, the servers known from the
+// previous check are shown with a placeholder value.
+let knownSources = RESOLVERS.map(r => ({ group: 'browser', label: r.label, host: new URL(r.url).host }));
+let backendRegion = null;
+
+function renderSources(sources, winner, pending) {
+  const titles = [
+    ['auth', 'Serveurs faisant autorité'],
+    ['browser', 'Résolveurs publics, depuis votre navigateur'],
+    ['backend', `Résolveurs publics, depuis Vercel${backendRegion ? ` (${REGION_NAMES[backendRegion] || backendRegion})` : ''}`],
+  ];
+  let answered = 0, agreeing = 0;
+  $('groups').replaceChildren(...titles.flatMap(([group, title]) => {
+    const members = sources.filter(s => s.group === group);
+    if (!members.length) return [];
+    const box = document.createElement('div');
+    box.className = 'group';
+    const heading = document.createElement('div');
+    heading.className = 'group-title';
+    heading.textContent = title;
+    const list = document.createElement('ul');
+    list.className = 'chips';
+    for (const s of members) {
+      let cls = '', val = '…', detail = '';
+      if (pending) { /* placeholder */ }
+      else if (s.target) {
+        answered++;
+        if (s.target === winner) agreeing++;
+        cls = s.target === winner ? 'ok' : 'diff';
+        val = envOf(s.target) || '?';
+        detail = s.target;
+      } else { cls = 'fail'; val = '✕'; detail = s.error; }
+      const li = document.createElement('li');
+      li.className = cls;
+      li.title = detail ? `${s.host} : ${detail}` : s.host;
+      const name = document.createElement('span');
+      name.textContent = s.label;
+      const value = document.createElement('span');
+      value.className = 'val';
+      value.textContent = val;
+      li.append(name, value);
+      list.append(li);
+    }
+    box.append(heading, list);
+    return [box];
+  }));
+
+  const summary = $('summary');
+  summary.className = '';
+  if (pending || !answered) { summary.textContent = ''; return; }
+  const failed = sources.length - answered;
+  let text = agreeing === answered
+    ? `${answered} serveurs DNS interrogés, tous d'accord`
+    : `Réponses divergentes : ${agreeing} serveurs DNS d'accord sur ${answered}`;
+  if (agreeing !== answered) summary.className = 'warn';
+  if (failed) text += ` · ${failed} sans réponse`;
+  summary.textContent = text;
+}
+
+// Age of the information on screen, counted from when the DNS answers actually
+// arrived (not from when the suspense delay let them be shown).
+const relative = new Intl.RelativeTimeFormat('fr', { numeric: 'always' });
+let lastCheck = null;
+
+function renderAge() {
+  let text = '';
+  if (busy) text = 'Interrogation des serveurs DNS…';
+  else if (lastCheck !== null) {
+    const s = Math.floor((Date.now() - lastCheck) / 1000);
+    const ago = s < 5 ? "à l'instant"
+      : s < 60 ? relative.format(-s, 'second')
+      : s < 3600 ? relative.format(-Math.floor(s / 60), 'minute')
+      : s < 86400 ? relative.format(-Math.floor(s / 3600), 'hour')
+      : relative.format(-Math.floor(s / 86400), 'day');
+    text = `Dernière vérification ${ago}`;
+  }
+  $('age').textContent = text;
+}
+setInterval(renderAge, 1000);
+
+let busy = false;
+async function check() {
+  if (busy) return;
+  busy = true;
+  render(null, true);
+  renderSources(knownSources, null, true);
+  renderAge();
+  try {
+    let answeredAt = null;
+    // The delay is purely for show: it holds the result back so the lookup feels like it takes a while.
+    const [[fromBrowser, backend]] = await Promise.all([
+      Promise.all([browserSources(), backendSources()]).then(all => { answeredAt = Date.now(); return all; }),
+      new Promise(r => setTimeout(r, MIN_SUSPENSE_MS)),
+    ]);
+    const sources = [...backend.sources, ...fromBrowser];
+    backendRegion = backend.region;
+    knownSources = sources.map(({ group, label, host }) => ({ group, label, host }));
+
+    // The authoritative servers decide when they all agree: they are the source of truth,
+    // resolvers only cache what they said. Otherwise fall back to a majority vote.
+    const votes = new Map();
+    for (const { target } of sources) if (target) votes.set(target, (votes.get(target) || 0) + 1);
+    const ranked = [...votes].sort((a, b) => b[1] - a[1]);
+    const tied = ranked.length > 1 && ranked[0][1] === ranked[1][1];
+    const authTargets = new Set(sources.filter(s => s.group === 'auth' && s.target).map(s => s.target));
+    const winner = authTargets.size === 1 ? [...authTargets][0]
+      : ranked.length && !tied ? ranked[0][0] : null;
+
+    if (ranked.length) lastCheck = answeredAt;
+    renderSources(sources, winner, false);
+    if (!ranked.length) render(null, false, "Aucun serveur DNS n'a répondu");
+    else if (!winner) render(null, false, `Les serveurs DNS sont partagés : ${ranked.map(([t, n]) => `${t} (${n})`).join(', ')}`);
+    else if (cards.some(c => c.dataset.env === envOf(winner))) render(envOf(winner));
+    else render(null, false, `Le DNS pointe vers une cible inattendue : ${winner}`);
+  } catch (e) {
+    render(null, false, `Échec de la vérification : ${e.message}`);
+  } finally {
+    busy = false;
+    renderAge();
+  }
+}
+
+$('main').addEventListener('click', check);
+check();
+</script>
+</body>
+</html>
