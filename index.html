@@ -212,9 +212,11 @@ const TEST_SHARE = (() => {
 const TIMEOUT_MS = 5000;
 
 // Server-side half of the check (api/dns.js), streamed as NDJSON: authoritative name
-// servers and public resolvers a browser cannot query. A local copy of this page uses
-// the deployed one.
-const BACKEND_URL = location.protocol === 'file:' ? 'https://procoenv.vercel.app/api/dns' : '/api/dns';
+// servers and public resolvers a browser cannot query. It is optional: where the page is
+// hosted without it (GitHub Pages), the URL answers 404 and the page uses only the
+// browser resolvers. A local copy of this page uses the Vercel deployment.
+const BACKEND_URL = location.protocol === 'file:' ? 'https://procoenv.vercel.app/api/dns' : 'api/dns';
+let backendMissing = false;  // set once the backend URL answered 404
 const BACKEND_TIMEOUT_MS = 9000;
 const REGION_NAMES = { cdg1: 'Paris', fra1: 'Francfort', dub1: 'Dublin', lhr1: 'Londres', iad1: 'Washington' };
 
@@ -334,8 +336,11 @@ async function streamBackend(onMessage, hosts = []) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), BACKEND_TIMEOUT_MS);
   const query = hosts.map(h => `host=${encodeURIComponent(h)}`).join('&');
+  const noBackend = () => Object.assign(new Error('pas de serveur'), { noBackend: true });
   try {
+    if (backendMissing) throw noBackend();
     const res = await fetch(query ? `${BACKEND_URL}?${query}` : BACKEND_URL, { cache: 'no-store', signal: ctl.signal });
+    if (res.status === 404) { backendMissing = true; throw noBackend(); }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = '';
@@ -351,6 +356,7 @@ async function streamBackend(onMessage, hosts = []) {
       }
     }
   } catch (e) {
+    if (e.noBackend) throw e;
     throw new Error(e.name === 'AbortError' ? 'délai dépassé' : e.message);
   } finally {
     clearTimeout(timer);
@@ -812,6 +818,15 @@ async function check() {
         revealer.receive(backendRows[message.index], resultOf(message));
       }
     }).catch(e => {
+      if (e.noBackend) {
+        // Hosted without a backend: only the browser resolvers are shown.
+        backendRows.forEach(removeRow);
+        backendRows = [];
+        setBackendRegion(null);
+        listComplete = true;
+        pointEarly();
+        return;
+      }
       if (!backendStarted) {
         // No server list came back: show the backend itself as one failed row.
         backendRows.forEach(removeRow);
