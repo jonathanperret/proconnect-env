@@ -23,3 +23,7 @@ so. Parameters combine: `?test&refresh=15`.
 
 Pushing to `main` deploys to production, and `procoenv.vercel.app` follows the latest
 production deployment.
+
+The backend is optional: hosted as static files (GitHub Pages), `api/dns` answers 404
+and the page shows only the resolvers it can ask from the browser. `.nojekyll` tells
+GitHub Pages to serve the files as they are.
