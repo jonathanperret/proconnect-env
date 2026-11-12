@@ -4,11 +4,14 @@
 //
 // The response is streamed as NDJSON, one JSON object per line:
 //   { type: 'start', region, sources: [{ group, label, host }] }
-//   { type: 'result', index, target } or { type: 'result', index, error }  (in arrival order)
+//   { type: 'result', index, target, ttl } or { type: 'result', index, error }  (in arrival order)
 //   { type: 'end' }
+// ttl is in seconds: the configured value from an authoritative server, the time left in
+// its cache from a resolver.
 // With one or more ?host=<host from the sources list>, only those servers are asked, and
-// each answer is a line { type: 'result', host, target } or { type: 'result', host, error }.
+// each answer is a line { type: 'result', host, target, ttl } or { type: 'result', host, error }.
 // Unknown hosts are refused, so the endpoint cannot be pointed at arbitrary servers.
+const dgram = require('node:dgram');
 const { Resolver } = require('node:dns').promises;
 
 const NAME = 'federation.proconnect.gouv.fr';
@@ -32,39 +35,89 @@ const PUBLIC_RESOLVERS = [
   ['DNS for Family', '94.130.180.225'],
 ];
 
-const MESSAGES = { ETIMEOUT: 'délai dépassé', ENODATA: 'pas de CNAME', ENOTFOUND: 'nom inconnu',
-  ECONNREFUSED: 'connexion refusée', ESERVFAIL: 'erreur du serveur', EREFUSED: 'requête refusée' };
+const TIMEOUT_MESSAGE = 'délai dépassé';
+const RCODE_MESSAGES = { 2: 'erreur du serveur', 3: 'nom inconnu', 5: 'requête refusée' };
+
+// --- DNS over UDP. Node's resolver does not report TTLs for CNAME records, so queries are
+// built and parsed here (same format as in index.html).
+const TYPE_CNAME = 5;
+
+function buildQuery(id) {
+  const bytes = [id >> 8, id & 255, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0];  // header: RD set, 1 question
+  for (const label of NAME.split('.')) bytes.push(label.length, ...Buffer.from(label));
+  bytes.push(0, 0, TYPE_CNAME, 0, 1);                                // root, type, class IN
+  return Buffer.from(bytes);
+}
+
+// Reads a (possibly compressed) domain name; returns [name, offset after it].
+function readName(buf, off) {
+  const labels = [];
+  let end = null;
+  for (let hops = 0; ; ) {
+    const len = buf[off];
+    if (len === undefined) throw new Error('réponse tronquée');
+    if (len === 0) { off++; break; }
+    if ((len & 0xc0) === 0xc0) {
+      if (end === null) end = off + 2;
+      if (++hops > 20) throw new Error('réponse invalide');
+      off = ((len & 0x3f) << 8) | buf[off + 1];
+      continue;
+    }
+    labels.push(buf.toString('latin1', off + 1, off + 1 + len));
+    off += 1 + len;
+  }
+  return [labels.join('.'), end ?? off];
+}
+
+function parseResponse(buf) {
+  if (buf.length < 12) throw new Error('réponse tronquée');
+  const questions = buf.readUInt16BE(4), count = buf.readUInt16BE(6);
+  let off = 12;
+  for (let i = 0; i < questions; i++) { [, off] = readName(buf, off); off += 4; }
+  const answers = [];
+  for (let i = 0; i < count; i++) {
+    let name; [name, off] = readName(buf, off);
+    const type = buf.readUInt16BE(off), ttl = buf.readUInt32BE(off + 4), rdlength = buf.readUInt16BE(off + 8);
+    off += 10;
+    answers.push({ name, type, ttl, data: type === TYPE_CNAME ? readName(buf, off)[0] : null });
+    off += rdlength;
+  }
+  return { id: buf.readUInt16BE(0), rcode: buf[3] & 15, answers };
+}
 
 // Some resolvers (Comodo, Level3) silently drop a share of queries rather than answering
 // slowly: an answer comes back within ~100 ms or never, so waiting longer does not help.
-// Instead a fresh query is sent every RETRY_EVERY_MS and the first answer wins.
+// Instead the query is sent again every RETRY_EVERY_MS and the first answer wins.
 const ASK_TIMEOUT_MS = 3500;
 const RETRY_EVERY_MS = 700;
 
 function ask(ip) {
   return new Promise(resolve => {
-    const timers = [], resolvers = [];
+    const id = Math.floor(Math.random() * 65536);
+    const query = buildQuery(id);
+    const socket = dgram.createSocket('udp4');
+    const timers = [];
     let done = false;
     const finish = result => {
       if (done) return;
       done = true;
       timers.forEach(clearTimeout);
-      resolvers.forEach(r => r.cancel());
+      socket.close();
       resolve(result);
     };
-    const attempt = remaining => {
-      const resolver = new Resolver({ timeout: remaining, tries: 1 });
-      resolver.setServers([ip]);
-      resolvers.push(resolver);
-      resolver.resolveCname(NAME).then(
-        ([target]) => finish({ target: target.toLowerCase() }),
-        // A timeout leaves the other attempts running; any other error is an answer.
-        e => e.code !== 'ETIMEOUT' && finish({ error: MESSAGES[e.code] || e.code || e.message }));
-    };
+    socket.on('error', e => finish({ error: e.code || e.message }));
+    socket.on('message', (message, from) => {
+      let response;
+      try { response = parseResponse(message); } catch { return; }
+      if (response.id !== id || from.address !== ip) return;  // not an answer to our query
+      if (response.rcode) return finish({ error: RCODE_MESSAGES[response.rcode] || `statut DNS ${response.rcode}` });
+      const cname = response.answers.find(a => a.type === TYPE_CNAME && a.name.toLowerCase() === NAME);
+      finish(cname ? { target: cname.data.toLowerCase(), ttl: cname.ttl } : { error: 'pas de CNAME' });
+    });
     for (let at = 0; at < ASK_TIMEOUT_MS; at += RETRY_EVERY_MS) {
-      timers.push(setTimeout(() => attempt(ASK_TIMEOUT_MS - at), at));
+      timers.push(setTimeout(() => !done && socket.send(query, 53, ip), at));
     }
-    timers.push(setTimeout(() => finish({ error: MESSAGES.ETIMEOUT }), ASK_TIMEOUT_MS));
+    timers.push(setTimeout(() => finish({ error: TIMEOUT_MESSAGE }), ASK_TIMEOUT_MS));
   });
 }
 

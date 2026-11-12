@@ -83,6 +83,7 @@
   #error { margin-top: 16px; text-align: center; color: var(--err); font-size: 15px; overflow-wrap: anywhere; }
   #summary { margin-top: 20px; min-height: 1.4em; text-align: center; font-size: 14px; line-height: 1.4; }
   #summary.warn { color: var(--warn); font-weight: 600; }
+  #ttl { min-height: 1.4em; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.4; }
 
   /* One row per DNS server. The pill sits at the centre of its row; its horizontal
      offset is driven from JS, so it lands under the card of the environment it names. */
@@ -153,6 +154,7 @@
 
   <div id="error" hidden></div>
   <div id="summary" title="Cliquer pour revérifier"></div>
+  <div id="ttl"></div>
 
   <div id="rows">
     <section class="group" data-group="auth" hidden>
@@ -261,8 +263,9 @@ function parseWire(buf) {
   for (let i = 0; i < count; i++) {
     let name; [name, off] = readName(buf, off);
     const type = u16(off), rdlength = u16(off + 8);
+    const ttl = u16(off + 4) * 65536 + u16(off + 6);
     off += 10;
-    answers.push({ name, type, data: type === TYPE_CNAME ? readName(buf, off)[0] : null });
+    answers.push({ name, type, ttl, data: type === TYPE_CNAME ? readName(buf, off)[0] : null });
     off += rdlength;
   }
   return { status: buf[3] & 15, answers };
@@ -283,7 +286,8 @@ async function fetchWithTimeout(url, ms, init) {
   }
 }
 
-// Asks one service from the browser; resolves to the CNAME target, rejects if there is no usable answer.
+// Asks one service from the browser; resolves to { target, ttl } (ttl: seconds left in its
+// cache), rejects if there is no usable answer.
 async function lookup(r) {
   const res = await fetchWithTimeout(
     r.json ? `${r.url}?name=${NAME}&type=CNAME` : `${r.url}?dns=${WIRE_QUERY}`, TIMEOUT_MS,
@@ -293,14 +297,14 @@ async function lookup(r) {
   if (r.json) {
     const d = await res.json();
     status = d.Status;
-    answers = (d.Answer || []).map(a => ({ name: strip(a.name), type: a.type, data: strip(String(a.data)) }));
+    answers = (d.Answer || []).map(a => ({ name: strip(a.name), type: a.type, ttl: a.TTL, data: strip(String(a.data)) }));
   } else {
     ({ status, answers } = parseWire(new Uint8Array(await res.arrayBuffer())));
   }
   if (status !== 0) throw new Error(`statut DNS ${status}`);
   const cname = answers.find(a => a.type === TYPE_CNAME && a.name.toLowerCase() === NAME);
   if (!cname) throw new Error('pas de CNAME');
-  return cname.data.toLowerCase();
+  return { target: cname.data.toLowerCase(), ttl: cname.ttl };
 }
 
 // Reads a backend NDJSON stream (see api/dns.js), calling onMessage for each line as it
@@ -332,7 +336,8 @@ async function streamBackend(onMessage, hosts = []) {
   }
 }
 
-const resultOf = message => message.target ? { target: message.target } : { error: message.error || 'pas de réponse' };
+const resultOf = message => message.target ? { target: message.target, ttl: message.ttl }
+  : { error: message.error || 'pas de réponse' };
 
 // --- Motion
 // Everything that moves is a value pulled by a spring towards a target, so motion is
@@ -475,11 +480,16 @@ function resetRow(row) {
   row.spring.sway();
 }
 
+// "300 s (5 min)"
+const formatTtl = s => s >= 60 ? `${s} s (${Math.round(s / 60)} min)` : `${s} s`;
+
 function showResult(row) {
-  const { target, error } = row.result;
+  const { target, error, ttl } = row.result;
   const idx = cardIndex(target);
   row.pill.className = `pill ${error ? 'fail' : idx >= 0 ? 'ok' : 'diff'}`;
-  row.el.title = `${row.host} : ${error || target}\n${RETRY_HINT}`;
+  // An authoritative server gives the configured TTL; a resolver, the time left in its cache.
+  const ttlLine = ttl == null ? '' : `\n${row.group === 'auth' ? 'TTL' : 'TTL restant'} : ${formatTtl(ttl)}`;
+  row.el.title = `${row.host} : ${error || target}${ttlLine}\n${RETRY_HINT}`;
   row.val.textContent = error ? '?' : envOf(target) || '≠';
   row.width = row.pill.offsetWidth;
   row.spring.settle(idx >= 0 ? [-0.5, 0.5][idx] : 0);
@@ -581,6 +591,12 @@ function renderSummary() {
   ].filter(Boolean);
   $('summary').className = diverging ? 'warn' : '';
   $('summary').textContent = rows.length ? `${rows.length} serveurs DNS interrogés : ${parts.join(' · ')}` : '';
+
+  // The record's configured TTL, as given by the authoritative servers.
+  const ttls = [...new Set(shown.filter(r => r.group === 'auth' && r.result.ttl != null).map(r => r.result.ttl))]
+    .sort((a, b) => a - b);
+  $('ttl').textContent = !ttls.length ? ''
+    : `TTL du CNAME : ${ttls.length === 1 ? formatTtl(ttls[0]) : `de ${formatTtl(ttls[0])} à ${formatTtl(ttls.at(-1))}`}`;
 }
 
 // Age of the information on screen, counted from when the DNS answers actually
@@ -610,7 +626,7 @@ function falsify(result) {
   if (!TEST_SHARE || !result.target || Math.random() >= TEST_SHARE) return result;
   const env = envOf(result.target);
   const other = cards.map(c => c.dataset.env).find(e => e !== env);
-  return env && other ? { target: result.target.replace(`production${env}`, `production${other}`) } : result;
+  return env && other ? { ...result, target: result.target.replace(`production${env}`, `production${other}`) } : result;
 }
 
 if (TEST_SHARE) {
@@ -674,7 +690,7 @@ async function retry(rows) {
   renderSummary();
   const revealer = makeRevealer(conclude);
   const fromBrowser = rows.filter(r => r.resolver).map(row => lookup(row.resolver)
-    .then(target => revealer.receive(row, { target }), e => revealer.receive(row, { error: e.message })));
+    .then(result => revealer.receive(row, result), e => revealer.receive(row, { error: e.message })));
   const backend = rows.filter(r => !r.resolver);
   const fromBackend = backend.length && streamBackend(message => {
     const row = message.type === 'result' && backend.find(r => r.host === message.host);
@@ -715,7 +731,7 @@ async function check() {
   try {
     let answeredAt = null, backendStarted = false;
     const fromBrowser = Promise.all(browserRows.map(row => lookup(row.resolver)
-      .then(target => revealer.receive(row, { target }), e => revealer.receive(row, { error: e.message }))));
+      .then(result => revealer.receive(row, result), e => revealer.receive(row, { error: e.message }))));
 
     const fromBackend = streamBackend(message => {
       if (message.type === 'start') {
