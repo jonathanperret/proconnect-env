@@ -1,29 +1,29 @@
-# procoenv
+# proconnect-env
 
 Shows which ProConnect environment is active: `federation.proconnect.gouv.fr` is a
 CNAME to `lb.production02…` or `lb.production12…`; the one it points to is active, the
 other is the standby (PRA).
 
-Live at https://procoenv.vercel.app
+Live at https://proconnect-gouv.github.io/proconnect-env/, published with GitHub Pages.
 
-- `index.html`: the whole page. It asks public DNS-over-HTTPS resolvers that allow
-  browser requests, plus the backend below, and shows one row per server. The needle
-  points once 80% of the servers agree, a little short of the card if some disagree.
-- `api/dns.js`: Vercel function that asks the zone's authoritative name servers and
-  public resolvers over plain DNS, streaming each answer as NDJSON as it arrives.
-  `?host=…` (repeatable) asks only those servers.
-- `vercel.json`: runs functions in Paris (`cdg1`).
+## Files
 
-On the page, clicking the dial or the summary re-runs the whole check; clicking a row
-or a group title asks just that server or group again. The check also re-runs every
-minute while the tab is visible; `?refresh=30` changes the delay (in seconds, at least
-10) and `?refresh=0` turns it off. `?test` (or `?test=0.4`) swaps a random share of the
-answers for the other environment, to see what disagreement looks like; a banner says
-so. Parameters combine: `?test&refresh=15`.
+- `index.html`: the whole page, with no server side. It asks the public DNS-over-HTTPS
+  resolvers that accept requests from a browser and shows one row per resolver. The
+  needle points once 80% of them agree, a little short of the card if some disagree.
+  A collapsed section shows the raw answer of one of the zone's authoritative servers,
+  through dns.bortzmeyer.org, for reading only.
+- `.nojekyll`: makes GitHub Pages serve the files as they are.
 
-Pushing to `main` deploys to production, and `procoenv.vercel.app` follows the latest
-production deployment.
+## Using the page
 
-The backend is optional: hosted as static files (GitHub Pages), `api/dns` answers 404
-and the page shows only the resolvers it can ask from the browser. `.nojekyll` tells
-GitHub Pages to serve the files as they are.
+Clicking the dial or the summary re-runs the whole check; clicking a row or the group
+title asks just that resolver or all of them again. The check also re-runs every minute
+while the tab is visible; `?refresh=30` changes the delay (in seconds, at least 10) and
+`?refresh=0` turns it off. `?test` (or `?test=0.4`) swaps a random share of the answers
+for the other environment, to see what disagreement looks like; a banner says so.
+Parameters combine: `?test&refresh=15`.
+
+## Hosting
+
+Pushing to `main` publishes the page on GitHub Pages.
