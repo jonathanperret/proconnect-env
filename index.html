@@ -175,6 +175,7 @@ const MIN_SUSPENSE_MS = 1000;  // for show: the needle waits at least this long
 const PILL_MIN_MS = 600;       // for show: the first server's pill swings at least this long,
 const PILL_STAGGER_MS = 40;    // and each next answer (in arrival order) at least this much longer
 const EARLY_AGREEMENT = 0.8;   // share of all servers queried that must agree before the needle points
+const HIGHLIGHT_AGREEMENT = 0.6;  // share of answering servers that must agree for the cards to be coloured
 
 // Test mode, for demos: with ?test (or ?test=<share between 0 and 1>), each answer has that
 // probability (default 0.2) of being swapped for the other environment, so disagreement
@@ -501,13 +502,14 @@ const allRows = () => [...backendRows, ...browserRows];
 // --- Rendering
 // active: an env number present on the page, or null (unknown / pending).
 // firmness: from leaning(); below 1 the needle stops short of the card, towards the centre.
-function render(active, pending, error, firmness = 1) {
+// highlight: false leaves both cards uncoloured, when too few servers agree (see HIGHLIGHT_AGREEMENT).
+function render(active, pending, error, firmness = 1, highlight = true) {
   const idx = cards.findIndex(c => c.dataset.env === active);
   $('switch').dataset.active = ['left', 'right'][idx] || 'none';
   if (pending) needle.sway();
   else needle.settle(idx >= 0 ? [45, -45][idx] * firmness : 0);
   cards.forEach((card, i) => {
-    card.classList.toggle('active', i === idx);
+    card.classList.toggle('active', i === idx && highlight);
     card.classList.toggle('pending', idx < 0);
     card.querySelector('.role').textContent =
       idx < 0 ? (pending ? '…' : '?') : i === idx ? 'Environnement actif' : 'Environnement PRA';
@@ -546,6 +548,14 @@ function leaning(rows, winner) {
     return idx === side ? 1 : idx >= 0 ? -1 : 0;
   });
   return Math.max(0, votes.reduce((a, b) => a + b, 0) / answered.length);
+}
+
+// Whether enough of the servers that answered name the winner's environment for its card
+// to be highlighted.
+function confident(rows, winner) {
+  const answered = rows.filter(r => r.result.target);
+  const agreeing = answered.filter(r => cardIndex(r.result.target) === cardIndex(winner)).length;
+  return answered.length > 0 && agreeing >= HIGHLIGHT_AGREEMENT * answered.length;
 }
 
 // Counts every server queried, updated as each answer is displayed. While answers are
@@ -647,7 +657,7 @@ function conclude() {
   renderSummary();
   if (!ranked.length) render(null, false, "Aucun serveur DNS n'a répondu");
   else if (!winner) render(null, false, `Les serveurs DNS sont partagés : ${ranked.map(([t, n]) => `${t} (${n})`).join(', ')}`);
-  else if (cardIndex(winner) >= 0) render(envOf(winner), false, '', leaning(rows, winner));
+  else if (cardIndex(winner) >= 0) render(envOf(winner), false, '', leaning(rows, winner), confident(rows, winner));
   else render(null, false, `Le DNS pointe vers une cible inattendue : ${winner}`);
   return ranked.length > 0;
 }
@@ -694,7 +704,7 @@ async function check() {
     if (!winner || cardIndex(winner) < 0) return;
     if (!pointed && agreeing < EARLY_AGREEMENT * rows.length) return;
     pointed = true;
-    render(envOf(winner), false, '', leaning(shown, winner));
+    render(envOf(winner), false, '', leaning(shown, winner), confident(shown, winner));
   };
   const revealer = makeRevealer(pointEarly);
 
