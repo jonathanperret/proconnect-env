@@ -4,7 +4,7 @@ Shows which ProConnect environment is active: `federation.proconnect.gouv.fr` is
 CNAME to `lb.production02…` or `lb.production12…`; the one it points to is active, the
 other is the standby (PRA).
 
-Live at https://proconnect-gouv.github.io/proconnect-env/, published with GitHub Pages.
+Live at https://env.proconnect.gouv.fr, published with GitHub Pages.
 
 ## Files
 
@@ -13,6 +13,7 @@ Live at https://proconnect-gouv.github.io/proconnect-env/, published with GitHub
   needle points once 80% of them agree, a little short of the card if some disagree.
   A collapsed section shows the raw answer of one of the zone's authoritative servers,
   through dns.bortzmeyer.org, for reading only.
+- `CNAME`: the GitHub Pages custom domain.
 - `.nojekyll`: makes GitHub Pages serve the files as they are.
 
 ## Using the page
