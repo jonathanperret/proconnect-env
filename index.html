@@ -181,13 +181,13 @@
 
   <div id="rows">
     <section class="group" data-group="auth" hidden>
-      <div class="group-title">Serveurs faisant autorité, depuis Vercel</div><div class="list"></div>
+      <div class="group-title">Serveurs faisant autorité, depuis ce serveur</div><div class="list"></div>
     </section>
     <section class="group" data-group="browser" hidden>
       <div class="group-title">Résolveurs publics, depuis votre navigateur</div><div class="list"></div>
     </section>
     <section class="group" data-group="backend" hidden>
-      <div class="group-title">Résolveurs publics, depuis Vercel</div><div class="list"></div>
+      <div class="group-title">Résolveurs publics, depuis ce serveur</div><div class="list"></div>
     </section>
   </div>
 </main>
@@ -518,10 +518,10 @@ function showResult(row) {
   renderSummary();
 }
 
-// Both server-side groups are asked from Vercel; their titles name the region.
+// Both server-side groups are asked from the backend; their titles name its region.
 function setBackendRegion(region) {
   backendRegion = region;
-  const from = `depuis Vercel${region ? ` (${REGION_NAMES[region] || region})` : ''}`;
+  const from = `depuis ce serveur${region ? ` (${REGION_NAMES[region] || region})` : ''}`;
   sections.auth.querySelector('.group-title').textContent = `Serveurs faisant autorité, ${from}`;
   sections.backend.querySelector('.group-title').textContent = `Résolveurs publics, ${from}`;
 }
@@ -816,7 +816,7 @@ async function check() {
         // No server list came back: show the backend itself as one failed row.
         backendRows.forEach(removeRow);
         setBackendRegion(null);
-        backendRows = [makeRow('backend', 'Vercel', new URL(BACKEND_URL, location.href).host, { whole: true })];
+        backendRows = [makeRow('backend', 'Ce serveur', new URL(BACKEND_URL, location.href).host, { whole: true })];
         backendRows.forEach(resetRow);
       }
       listComplete = true;
