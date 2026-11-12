@@ -21,7 +21,9 @@
     margin: 0; display: grid; place-items: center; background: var(--bg); color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  main { width: 100%; max-width: 640px; padding: 24px 16px; cursor: pointer; }
+  main { width: 100%; max-width: 640px; padding: 24px 16px; }
+  /* Clicking the dial or the summary re-runs the whole check; a row or a group title retries just that. */
+  #dial, #summary, .row, .group-title { cursor: pointer; }
 
   /* Source: the DNS name */
   .source { text-align: center; position: relative; z-index: 1; } /* above the needle */
@@ -61,65 +63,90 @@
   .env.active .role { background: var(--accent); color: var(--on-accent); }
   .env.pending { opacity: .6; }
 
+  #test-banner {
+    margin-bottom: 20px; padding: 6px 12px; border-radius: 8px; text-align: center;
+    background: var(--warn); color: var(--card); font-size: 13px; font-weight: 600;
+  }
   #error { margin-top: 16px; text-align: center; color: var(--err); font-size: 15px; overflow-wrap: anywhere; }
-
-  /* Per-server answers */
-  #sources { margin-top: 24px; text-align: center; }
-  #summary { min-height: 1.4em; font-size: 14px; line-height: 1.4; }
+  #summary { margin-top: 20px; min-height: 1.4em; text-align: center; font-size: 14px; line-height: 1.4; }
   #summary.warn { color: var(--warn); font-weight: 600; }
-  .group { margin-top: 14px; }
-  .group-title { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-  .chips {
-    list-style: none; margin: 6px 0 0; padding: 0;
-    display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+
+  /* One row per DNS server. The pill sits at the centre of its row; its horizontal
+     offset is driven from JS, so it lands under the card of the environment it names. */
+  .group { margin-top: 16px; }
+  .group-title {
+    text-align: center; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
   }
-  .chips li {
-    display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 10px; border-radius: 999px;
-    background: var(--card); border: 1px solid var(--border); color: var(--muted); font-size: 12px;
-    max-width: 100%; overflow-wrap: anywhere;
+  .row { position: relative; height: 28px; }
+  .row::before {
+    content: ''; position: absolute; left: 8px; right: 8px; top: 50%;
+    border-top: 1px dashed var(--border);
   }
-  .chips .val { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted); }
-  .chips li.ok .val { color: var(--accent); }
-  .chips li.diff { border-color: var(--warn); }
-  .chips li.diff .val { color: var(--warn); }
-  .chips li.fail { opacity: .6; }
-  .chips li.fail .val { color: var(--err); }
+  .pill {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap;
+    padding: 2px 10px; border-radius: 999px; font-size: 12px; line-height: 1.5;
+    background: var(--card); border: 1px solid var(--border); color: var(--muted);
+    transition: background .3s, border-color .3s, color .3s, opacity .3s;
+  }
+  .pill .val { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pill.ok { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+  .pill.ok .val { color: var(--accent); }
+  .pill.diff { border-color: var(--warn); color: var(--text); }
+  .pill.diff .val { color: var(--warn); }
+  .pill.fail { opacity: .55; }
+  .pill.fail .val { color: var(--err); }
+  .row:hover .pill { box-shadow: 0 0 0 3px var(--accent-soft); }
+  .row:hover::before { border-top-color: var(--muted); }
+  .group-title:hover { color: var(--text); }
 
   #age {
-    margin-top: 16px; min-height: 1.4em; text-align: center; color: var(--muted);
+    margin-top: 20px; min-height: 1.4em; text-align: center; color: var(--muted);
     font-size: 13px; line-height: 1.4; font-variant-numeric: tabular-nums;
   }
 </style>
 </head>
 <body>
-<main id="main" title="Cliquer pour revérifier">
-  <div class="source"><span>federation.proconnect.gouv.fr</span></div>
+<main id="main">
+  <div id="test-banner" hidden></div>
+  <div id="dial" title="Cliquer pour revérifier">
+    <div class="source"><span>federation.proconnect.gouv.fr</span></div>
 
-  <svg id="switch" viewBox="0 0 400 100" data-active="none" aria-hidden="true">
-    <line class="track" x1="200" y1="0" x2="100" y2="100"/>
-    <line class="track" x1="200" y1="0" x2="300" y2="100"/>
-    <g class="arm">
-      <!-- needle: short counterweight tail above the pivot, long taper to a point -->
-      <polygon points="195.5,-16 204.5,-16 206.5,0 200,138 193.5,0"/>
-    </g>
-    <circle class="pivot" cx="200" cy="0" r="10"/>
-    <circle class="pivot-cap" cx="200" cy="0" r="3.5"/>
-  </svg>
+    <svg id="switch" viewBox="0 0 400 100" data-active="none" aria-hidden="true">
+      <line class="track" x1="200" y1="0" x2="100" y2="100"/>
+      <line class="track" x1="200" y1="0" x2="300" y2="100"/>
+      <g class="arm">
+        <!-- needle: short counterweight tail above the pivot, long taper to a point -->
+        <polygon points="195.5,-16 204.5,-16 206.5,0 200,138 193.5,0"/>
+      </g>
+      <circle class="pivot" cx="200" cy="0" r="10"/>
+      <circle class="pivot-cap" cx="200" cy="0" r="3.5"/>
+    </svg>
 
-  <div class="envs">
-    <div class="slot"><div class="env pending" data-env="02">
-      <div class="num">02</div><div class="role">…</div>
-    </div></div>
-    <div class="slot"><div class="env pending" data-env="12">
-      <div class="num">12</div><div class="role">…</div>
-    </div></div>
+    <div class="envs">
+      <div class="slot"><div class="env pending" data-env="02">
+        <div class="num">02</div><div class="role">…</div>
+      </div></div>
+      <div class="slot"><div class="env pending" data-env="12">
+        <div class="num">12</div><div class="role">…</div>
+      </div></div>
+    </div>
   </div>
 
   <div id="error" hidden></div>
+  <div id="summary" title="Cliquer pour revérifier"></div>
 
-  <div id="sources">
-    <div id="summary"></div>
-    <div id="groups"></div>
+  <div id="rows">
+    <section class="group" data-group="auth" hidden>
+      <div class="group-title">Serveurs faisant autorité</div><div class="list"></div>
+    </section>
+    <section class="group" data-group="browser" hidden>
+      <div class="group-title">Résolveurs publics, depuis votre navigateur</div><div class="list"></div>
+    </section>
+    <section class="group" data-group="backend" hidden>
+      <div class="group-title">Résolveurs publics, depuis Vercel</div><div class="list"></div>
+    </section>
   </div>
 
   <div id="age"></div>
@@ -127,11 +154,25 @@
 
 <script>
 const NAME = 'federation.proconnect.gouv.fr';
-const MIN_SUSPENSE_MS = 2000;
+const MIN_SUSPENSE_MS = 1000;  // for show: the needle waits at least this long
+const PILL_MIN_MS = 600;       // for show: the first server's pill swings at least this long,
+const PILL_STAGGER_MS = 40;    // and each next answer (in arrival order) at least this much longer
+const EARLY_AGREEMENT = 0.8;   // share of all servers queried that must agree before the needle points
+
+// Test mode, for demos: with ?test (or ?test=<share between 0 and 1>), each answer has that
+// probability (default 0.2) of being swapped for the other environment, so disagreement
+// can be seen. Servers are still really queried; a banner says answers are falsified.
+const TEST_SHARE = (() => {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('test')) return 0;
+  const share = parseFloat(params.get('test'));
+  return share >= 0 && share <= 1 ? share : 0.2;
+})();
 const TIMEOUT_MS = 5000;
 
-// Server-side half of the check (api/dns.js): authoritative name servers and public
-// resolvers a browser cannot query. A local copy of this page uses the deployed one.
+// Server-side half of the check (api/dns.js), streamed as NDJSON: authoritative name
+// servers and public resolvers a browser cannot query. A local copy of this page uses
+// the deployed one.
 const BACKEND_URL = location.protocol === 'file:' ? 'https://procoenv.vercel.app/api/dns' : '/api/dns';
 const BACKEND_TIMEOUT_MS = 9000;
 const REGION_NAMES = { cdg1: 'Paris', fra1: 'Francfort', dub1: 'Dublin', lhr1: 'Londres', iad1: 'Washington' };
@@ -142,7 +183,6 @@ const REGION_NAMES = { cdg1: 'Paris', fra1: 'Francfort', dub1: 'Dublin', lhr1: '
 const RESOLVERS = [
   { label: 'Google',        url: 'https://dns.google/dns-query' },
   { label: 'Cloudflare',    url: 'https://cloudflare-dns.com/dns-query' },
-  { label: 'Quad9',         url: 'https://dns.quad9.net/dns-query' },
   { label: 'DNS4EU',        url: 'https://unfiltered.joindns4.eu/dns-query' },
   { label: 'CZ.NIC',        url: 'https://odvr.nic.cz/doh' },
   { label: 'Control D',     url: 'https://freedns.controld.com/p0' },
@@ -157,8 +197,10 @@ const RESOLVERS = [
 
 const $ = id => document.getElementById(id);
 const strip = s => s.replace(/\.$/, '');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 const cards = [...document.querySelectorAll('.env')];   // [left, right]
-const envOf = target => (target.match(/production(\d+)/) || [])[1];
+const envOf = target => ((target || '').match(/production(\d+)/) || [])[1];
+const cardIndex = target => cards.findIndex(c => c.dataset.env === envOf(target));
 
 // --- DNS begin
 const TYPE_CNAME = 5;
@@ -243,72 +285,208 @@ async function lookup(r) {
   return cname.data.toLowerCase();
 }
 
-// Every answer is a "source": { group, label, host, target } or { group, label, host, error }.
-// Groups: 'auth' (authoritative servers), 'browser' and 'backend' (public resolvers).
-const browserSources = () => Promise.all(RESOLVERS.map(async r => {
-  const source = { group: 'browser', label: r.label, host: new URL(r.url).host };
-  try { return { ...source, target: await lookup(r) }; }
-  catch (e) { return { ...source, error: e.message }; }
-}));
-
-async function backendSources() {
+// Reads a backend NDJSON stream (see api/dns.js), calling onMessage for each line as it
+// arrives. With hosts, only those servers are asked again.
+async function streamBackend(onMessage, hosts = []) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), BACKEND_TIMEOUT_MS);
+  const query = hosts.map(h => `host=${encodeURIComponent(h)}`).join('&');
   try {
-    const res = await fetchWithTimeout(BACKEND_URL, BACKEND_TIMEOUT_MS);
+    const res = await fetch(query ? `${BACKEND_URL}?${query}` : BACKEND_URL, { cache: 'no-store', signal: ctl.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return { region: data.region,
-             sources: data.sources.map(s => ({ ...s, group: s.group === 'auth' ? 'auth' : 'backend' })) };
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (line.trim()) onMessage(JSON.parse(line));
+      }
+    }
   } catch (e) {
-    return { region: null, sources: [{ group: 'backend', label: 'Vercel', host: BACKEND_URL, error: e.message }] };
+    throw new Error(e.name === 'AbortError' ? 'délai dépassé' : e.message);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-// The needle is a spring chasing a target angle, so its motion is always continuous.
-// - Waiting: a soft, critically damped spring follows a target that oscillates
-//   around the centre, which reads as a lazy pendulum swing.
-// - Settling: a much stiffer, underdamped spring yanks the needle onto the chosen
-//   environment; it overshoots and rings a few times before coming to rest.
-const arm = document.querySelector('.arm');
-const SWAY = { stiffness: 22, ratio: 1 };       // ratio 1 = critically damped
-const SNAP = { stiffness: 260, ratio: 0.4 };    // lower ratio = more ringing
-// The soft spring lags its target, so the visible swing is about half of SWAY_DEG.
-const SWAY_DEG = 60, SWAY_PERIOD_S = 1.3;
-let angle = 0, velocity = 0, restAngle = 0, swaying = false, swayStart = 0, lastFrame = null;
+const resultOf = message => message.target ? { target: message.target } : { error: message.error || 'pas de réponse' };
 
-function moveArm(deg, sway) {
-  restAngle = deg;
-  if (sway && !swaying) swayStart = performance.now();
-  swaying = sway;
-  if (lastFrame === null) requestAnimationFrame(frame);
+// --- Motion
+// Everything that moves is a value pulled by a spring towards a target, so motion is
+// always continuous:
+// - swaying: a soft, critically damped spring follows a target that oscillates around
+//   the centre, which reads as a lazy pendulum swing;
+// - settling: a much stiffer, underdamped spring yanks the value onto its rest position;
+//   it overshoots and rings a few times before stopping.
+const SWAY = { stiffness: 22, ratio: 1 };     // ratio 1 = critically damped
+const SNAP = { stiffness: 260, ratio: 0.4 };  // lower ratio = more ringing
+const springs = new Set();
+let looping = false, lastFrame = null, rowWidth = 0;
+
+class Spring {
+  // apply(value) draws the value. While swaying the target oscillates with this amplitude
+  // (the soft spring lags it, so the visible swing is about half), period in seconds,
+  // phase as a fraction of the period.
+  constructor(apply, amplitude, period, phase = 0) {
+    Object.assign(this, { apply, amplitude, period, phase,
+      value: 0, velocity: 0, rest: 0, swaying: false, swayStart: 0 });
+    springs.add(this);
+  }
+  sway() {
+    if (!this.swaying) {
+      // Starting from one side (a re-check): the target starts at the centre and heads for
+      // the other side, so the swing visibly crosses the centre even when the answer comes
+      // back quickly. Starting from the centre, the spring's own phase is used.
+      const fromSide = Math.abs(this.value) > this.amplitude * 0.1;
+      const phase = fromSide ? (this.value > 0 ? 0.5 : 0) : this.phase;
+      this.swayStart = performance.now() - phase * this.period * 1000;
+    }
+    this.swaying = true;
+    wake();
+  }
+  settle(rest) {
+    this.rest = rest;
+    this.swaying = false;
+    wake();
+  }
+  // Advances the spring by `elapsed` seconds; returns whether it is still moving.
+  step(now, elapsed) {
+    const { stiffness, ratio } = this.swaying ? SWAY : SNAP;
+    const damping = 2 * ratio * Math.sqrt(stiffness);
+    const target = this.swaying
+      ? this.amplitude * Math.sin(2 * Math.PI * (now - this.swayStart) / 1000 / this.period)
+      : this.rest;
+    // Small fixed sub-steps keep the stiff spring stable whatever the frame rate.
+    for (let left = elapsed; left > 0; left -= 0.004) {
+      const dt = Math.min(left, 0.004);
+      this.velocity += (stiffness * (target - this.value) - damping * this.velocity) * dt;
+      this.value += this.velocity * dt;
+    }
+    const eps = this.amplitude * 3e-4;
+    const resting = !this.swaying && Math.abs(target - this.value) < eps && Math.abs(this.velocity) < eps;
+    if (resting) { this.value = target; this.velocity = 0; }
+    this.apply(this.value);
+    return !resting;
+  }
 }
 
-function frame(now) {
-  const elapsed = Math.min((now - (lastFrame ?? now)) / 1000, 0.05);
+function wake() {
+  if (looping) return;
+  looping = true;
+  lastFrame = null;
+  requestAnimationFrame(loop);
+}
+
+function loop(now) {
+  const elapsed = lastFrame === null ? 0 : Math.min((now - lastFrame) / 1000, 0.05);
   lastFrame = now;
-  const { stiffness, ratio } = swaying ? SWAY : SNAP;
-  const damping = 2 * ratio * Math.sqrt(stiffness);
-  const target = swaying
-    ? SWAY_DEG * Math.sin(2 * Math.PI * (now - swayStart) / 1000 / SWAY_PERIOD_S)
-    : restAngle;
-  // Small fixed sub-steps keep the stiff spring stable whatever the frame rate.
-  for (let left = elapsed; left > 0; left -= 0.004) {
-    const dt = Math.min(left, 0.004);
-    velocity += (stiffness * (target - angle) - damping * velocity) * dt;
-    angle += velocity * dt;
-  }
-  if (!swaying && Math.abs(target - angle) < 0.02 && Math.abs(velocity) < 0.02) {
-    angle = target; velocity = 0; lastFrame = null;
-  } else {
-    requestAnimationFrame(frame);
-  }
-  arm.style.transform = `rotate(${angle}deg)`;
+  rowWidth = $('rows').clientWidth;
+  let moving = false;
+  for (const s of springs) if (s.step(now, elapsed)) moving = true;
+  if (moving) requestAnimationFrame(loop);
+  else looping = false;
 }
 
-// active: an env number present on the page, or null (unknown / pending)
-function render(active, pending, error) {
+window.addEventListener('resize', () => {
+  rowWidth = $('rows').clientWidth;
+  for (const s of springs) s.apply(s.value);
+});
+
+const arm = document.querySelector('.arm');
+const needle = new Spring(v => { arm.style.transform = `rotate(${v}deg)`; }, 60, 1.3);
+
+// --- Rows
+// One row per DNS server. Its pill swings around the centre while the server is being
+// asked, then moves under the card of the environment it answered (±0.5 = card centres),
+// or stays in the middle if it failed or named something unexpected.
+// Clicking a row asks that one server again; clicking a group's title asks the whole group.
+const sections = Object.fromEntries([...document.querySelectorAll('#rows .group')]
+  .map(s => [s.dataset.group, s]));
+const RETRY_HINT = 'Cliquer pour réinterroger ce serveur';
+let backendRegion = null;
+
+for (const [group, section] of Object.entries(sections)) {
+  const title = section.querySelector('.group-title');
+  title.title = 'Cliquer pour réinterroger ce groupe';
+  title.addEventListener('click', () => retry(allRows().filter(r => r.group === group)));
+}
+
+// resolver: the RESOLVERS entry for a browser row; whole: retrying this row means
+// re-running the whole check (the stand-in row shown when the backend gave no server list).
+function makeRow(group, label, host, { resolver = null, whole = false } = {}) {
+  const pill = document.createElement('span');
+  const name = document.createElement('span');
+  const val = document.createElement('span');
+  name.textContent = label;
+  val.className = 'val';
+  pill.append(name, val);
+  const el = document.createElement('div');
+  el.className = 'row';
+  el.append(pill);
+  sections[group].querySelector('.list').append(el);
+  sections[group].hidden = false;
+  const row = { group, label, host, resolver, whole, el, pill, val, result: null, width: 0, retrying: false };
+  el.addEventListener('click', () => (whole ? check() : retry([row])));
+  // Each pill gets its own rhythm so the rows do not swing in lockstep.
+  row.spring = new Spring(v => {
+    const half = rowWidth / 2, max = Math.max(0, half - row.width / 2 - 2);
+    pill.style.transform = `translate(calc(-50% + ${Math.max(-max, Math.min(max, v * half))}px), -50%)`;
+  }, 0.5, 1.1 + Math.random() * 0.5, Math.random());
+  return row;
+}
+
+function removeRow(row) {
+  row.el.remove();
+  springs.delete(row.spring);
+  const section = sections[row.group];
+  section.hidden = !section.querySelector('.list').children.length;
+}
+
+function resetRow(row) {
+  row.result = null;
+  row.shown = false;  // result may arrive before it is displayed; see makeRevealer
+  row.pill.className = 'pill';
+  row.el.title = row.host;
+  row.val.textContent = '…';
+  row.width = row.pill.offsetWidth;
+  row.spring.sway();
+}
+
+function showResult(row) {
+  const { target, error } = row.result;
+  const idx = cardIndex(target);
+  row.pill.className = `pill ${error ? 'fail' : idx >= 0 ? 'ok' : 'diff'}`;
+  row.el.title = `${row.host} : ${error || target}\n${RETRY_HINT}`;
+  row.val.textContent = error ? '?' : envOf(target) || '≠';
+  row.width = row.pill.offsetWidth;
+  row.spring.settle(idx >= 0 ? [-0.5, 0.5][idx] : 0);
+  row.shown = true;
+  renderSummary();
+}
+
+function setBackendRegion(region) {
+  backendRegion = region;
+  sections.backend.querySelector('.group-title').textContent =
+    `Résolveurs publics, depuis Vercel${region ? ` (${REGION_NAMES[region] || region})` : ''}`;
+}
+
+const browserRows = RESOLVERS.map(r => makeRow('browser', r.label, new URL(r.url).host, { resolver: r }));
+let backendRows = [];  // authoritative servers and backend resolvers, as of the last check
+const allRows = () => [...backendRows, ...browserRows];
+
+// --- Rendering
+// active: an env number present on the page, or null (unknown / pending).
+// firmness: from leaning(); below 1 the needle stops short of the card, towards the centre.
+function render(active, pending, error, firmness = 1) {
   const idx = cards.findIndex(c => c.dataset.env === active);
   $('switch').dataset.active = ['left', 'right'][idx] || 'none';
-  moveArm([45, -45][idx] ?? 0, !!pending);
+  if (pending) needle.sway();
+  else needle.settle(idx >= 0 ? [45, -45][idx] * firmness : 0);
   cards.forEach((card, i) => {
     card.classList.toggle('active', i === idx);
     card.classList.toggle('pending', idx < 0);
@@ -319,67 +497,57 @@ function render(active, pending, error) {
   $('error').textContent = error || '';
   // The tab shows the answer too, so it can be read without switching to the page.
   const pra = cards.find((_, i) => i !== idx);
-  document.title = idx >= 0 ? `ProConnect · actif ${active}, PRA ${pra.dataset.env}`
-    : pending ? 'ProConnect · vérification…' : 'ProConnect · environnement inconnu';
+  document.title = (TEST_SHARE ? 'TEST · ' : '') + (idx >= 0 ? `ProConnect · actif ${active}, PRA ${pra.dataset.env}`
+    : pending ? 'ProConnect · vérification…' : 'ProConnect · environnement inconnu');
 }
 
-// One chip per DNS server, grouped. While a check runs, the servers known from the
-// previous check are shown with a placeholder value.
-let knownSources = RESOLVERS.map(r => ({ group: 'browser', label: r.label, host: new URL(r.url).host }));
-let backendRegion = null;
+// The authoritative servers decide when they all agree: they are the source of truth,
+// resolvers only cache what they said. Otherwise a majority vote decides.
+// rows: rows whose answer is displayed.
+function verdict(rows) {
+  const votes = new Map();
+  for (const { result } of rows) if (result.target) votes.set(result.target, (votes.get(result.target) || 0) + 1);
+  const ranked = [...votes].sort((a, b) => b[1] - a[1]);
+  const tied = ranked.length > 1 && ranked[0][1] === ranked[1][1];
+  const authTargets = new Set(rows.filter(r => r.group === 'auth' && r.result.target).map(r => r.result.target));
+  const winner = authTargets.size === 1 ? [...authTargets][0]
+    : ranked.length && !tied ? ranked[0][0] : null;
+  return { ranked, winner };
+}
 
-function renderSources(sources, winner, pending) {
-  const titles = [
-    ['auth', 'Serveurs faisant autorité'],
-    ['browser', 'Résolveurs publics, depuis votre navigateur'],
-    ['backend', `Résolveurs publics, depuis Vercel${backendRegion ? ` (${REGION_NAMES[backendRegion] || backendRegion})` : ''}`],
-  ];
-  let answered = 0, agreeing = 0;
-  $('groups').replaceChildren(...titles.flatMap(([group, title]) => {
-    const members = sources.filter(s => s.group === group);
-    if (!members.length) return [];
-    const box = document.createElement('div');
-    box.className = 'group';
-    const heading = document.createElement('div');
-    heading.className = 'group-title';
-    heading.textContent = title;
-    const list = document.createElement('ul');
-    list.className = 'chips';
-    for (const s of members) {
-      let cls = '', val = '…', detail = '';
-      if (pending) { /* placeholder */ }
-      else if (s.target) {
-        answered++;
-        if (s.target === winner) agreeing++;
-        cls = s.target === winner ? 'ok' : 'diff';
-        val = envOf(s.target) || '?';
-        detail = s.target;
-      } else { cls = 'fail'; val = '✕'; detail = s.error; }
-      const li = document.createElement('li');
-      li.className = cls;
-      li.title = detail ? `${s.host} : ${detail}` : s.host;
-      const name = document.createElement('span');
-      name.textContent = s.label;
-      const value = document.createElement('span');
-      value.className = 'val';
-      value.textContent = val;
-      li.append(name, value);
-      list.append(li);
-    }
-    box.append(heading, list);
-    return [box];
-  }));
+// How firmly the displayed answers point at the winner's card, from 0 to 1: the average of
+// +1 for each answer naming that environment, -1 for the other one and 0 for an unexpected
+// target. Servers that did not answer are left out. 1 = unanimous.
+function leaning(rows, winner) {
+  const answered = rows.filter(r => r.result.target);
+  const side = cardIndex(winner);
+  if (!answered.length || side < 0) return 1;
+  const votes = answered.map(r => {
+    const idx = cardIndex(r.result.target);
+    return idx === side ? 1 : idx >= 0 ? -1 : 0;
+  });
+  return Math.max(0, votes.reduce((a, b) => a + b, 0) / answered.length);
+}
 
-  const summary = $('summary');
-  summary.className = '';
-  if (pending || !answered) { summary.textContent = ''; return; }
-  const failed = sources.length - answered;
-  let text = agreeing === answered
-    ? `${answered} serveurs DNS interrogés, tous d'accord`
-    : `Réponses divergentes : ${agreeing} serveurs DNS d'accord sur ${answered}`;
-  if (agreeing !== answered) summary.className = 'warn';
-  if (failed) text += ` · ${failed} sans réponse`;
-  summary.textContent = text;
+// Counts every server queried, updated as each answer is displayed. While answers are
+// still coming in, "d'accord" is relative to the provisional verdict.
+function renderSummary() {
+  const rows = allRows();
+  const shown = rows.filter(r => r.shown);
+  const { winner } = verdict(shown);
+  const answered = shown.filter(r => r.result.target);
+  const agreeing = answered.filter(r => r.result.target === winner).length;
+  const diverging = answered.length - agreeing;
+  const failed = shown.length - answered.length;
+  const pending = rows.length - shown.length;
+  const parts = [
+    agreeing && `${agreeing} d'accord`,
+    diverging && `${diverging} ${diverging > 1 ? 'divergents' : 'divergent'}`,
+    failed && `${failed} sans réponse`,
+    pending && `${pending} en attente`,
+  ].filter(Boolean);
+  $('summary').className = diverging ? 'warn' : '';
+  $('summary').textContent = rows.length ? `${rows.length} serveurs DNS interrogés : ${parts.join(' · ')}` : '';
 }
 
 // Age of the information on screen, counted from when the DNS answers actually
@@ -403,40 +571,156 @@ function renderAge() {
 }
 setInterval(renderAge, 1000);
 
-let busy = false;
+// --- Check
+// In test mode, swaps some answers for the other environment (see TEST_SHARE).
+function falsify(result) {
+  if (!TEST_SHARE || !result.target || Math.random() >= TEST_SHARE) return result;
+  const env = envOf(result.target);
+  const other = cards.map(c => c.dataset.env).find(e => e !== env);
+  return env && other ? { target: result.target.replace(`production${env}`, `production${other}`) } : result;
+}
+
+if (TEST_SHARE) {
+  $('test-banner').hidden = false;
+  $('test-banner').textContent =
+    `Mode test : environ ${Math.round(TEST_SHARE * 100)} % des réponses sont falsifiées au hasard`;
+}
+
+let busy = false;    // a full check is running
+let generation = 0;  // bumped by each full check, so answers to older requests are dropped
+
+// Shows answers in the order they arrive. Most servers answer within a few hundred
+// milliseconds, so early answers are held back and released one slot at a time.
+// onShown(row) runs after each answer is displayed.
+function makeRevealer(onShown = () => {}) {
+  const started = performance.now(), gen = generation, reveals = [];
+  let arrivals = 0;
+  return {
+    receive(row, result) {
+      if (gen !== generation || row.result) return;
+      row.result = falsify(result);
+      const show = () => {
+        if (gen !== generation) return;  // a full check has started since
+        row.retrying = false;
+        showResult(row);
+        onShown(row);
+      };
+      const wait = started + PILL_MIN_MS + PILL_STAGGER_MS * arrivals++ - performance.now();
+      if (wait > 0) reveals.push(sleep(wait).then(show));
+      else show();
+    },
+    done: () => Promise.all(reveals),
+  };
+}
+
+// Works out the verdict from the displayed answers and shows it (servers being asked again
+// are left out until they answer). Returns whether any server answered.
+function conclude() {
+  const rows = allRows().filter(r => r.shown);
+  const { ranked, winner } = verdict(rows);
+
+  // Servers that answered something other than the winner are flagged.
+  for (const row of rows) {
+    const { target } = row.result;
+    if (target) row.pill.className = `pill ${target === winner && cardIndex(target) >= 0 ? 'ok' : 'diff'}`;
+  }
+
+  renderSummary();
+  if (!ranked.length) render(null, false, "Aucun serveur DNS n'a répondu");
+  else if (!winner) render(null, false, `Les serveurs DNS sont partagés : ${ranked.map(([t, n]) => `${t} (${n})`).join(', ')}`);
+  else if (cardIndex(winner) >= 0) render(envOf(winner), false, '', leaning(rows, winner));
+  else render(null, false, `Le DNS pointe vers une cible inattendue : ${winner}`);
+  return ranked.length > 0;
+}
+
+// Asks some servers again (one pill, or a whole group) without touching the others.
+async function retry(rows) {
+  rows = rows.filter(r => !r.retrying && !r.whole);
+  if (busy || !rows.length) return;
+  for (const row of rows) { resetRow(row); row.retrying = true; }
+  renderSummary();
+  const revealer = makeRevealer(conclude);
+  const fromBrowser = rows.filter(r => r.resolver).map(row => lookup(row.resolver)
+    .then(target => revealer.receive(row, { target }), e => revealer.receive(row, { error: e.message })));
+  const backend = rows.filter(r => !r.resolver);
+  const fromBackend = backend.length && streamBackend(message => {
+    const row = message.type === 'result' && backend.find(r => r.host === message.host);
+    if (row) revealer.receive(row, resultOf(message));
+  }, backend.map(r => r.host)).catch(e => backend.forEach(row => revealer.receive(row, { error: e.message })));
+  await Promise.all([...fromBrowser, fromBackend]);
+  for (const row of rows) revealer.receive(row, { error: 'pas de réponse' });
+  await revealer.done();
+}
+
 async function check() {
   if (busy) return;
   busy = true;
+  generation++;
   render(null, true);
-  renderSources(knownSources, null, true);
+  for (const row of allRows()) { row.retrying = false; resetRow(row); }
+  renderSummary();
   renderAge();
+
+  // The needle points as soon as enough servers agree, without waiting for slow or
+  // unresponsive ones. Only once the server list is complete (the backend sent its list
+  // or failed), and not before the minimum suspense delay. Once pointing, it follows each
+  // later answer (see leaning()).
+  let listComplete = false, suspenseOver = false, pointed = false;
+  const pointEarly = () => {
+    if (!listComplete || !suspenseOver) return;
+    const rows = allRows();
+    const shown = rows.filter(r => r.shown);
+    const { winner } = verdict(shown);
+    const agreeing = shown.filter(r => r.result.target === winner).length;
+    if (!winner || cardIndex(winner) < 0) return;
+    if (!pointed && agreeing < EARLY_AGREEMENT * rows.length) return;
+    pointed = true;
+    render(envOf(winner), false, '', leaning(shown, winner));
+  };
+  const revealer = makeRevealer(pointEarly);
+
   try {
-    let answeredAt = null;
-    // The delay is purely for show: it holds the result back so the lookup feels like it takes a while.
-    const [[fromBrowser, backend]] = await Promise.all([
-      Promise.all([browserSources(), backendSources()]).then(all => { answeredAt = Date.now(); return all; }),
-      new Promise(r => setTimeout(r, MIN_SUSPENSE_MS)),
+    let answeredAt = null, backendStarted = false;
+    const fromBrowser = Promise.all(browserRows.map(row => lookup(row.resolver)
+      .then(target => revealer.receive(row, { target }), e => revealer.receive(row, { error: e.message }))));
+
+    const fromBackend = streamBackend(message => {
+      if (message.type === 'start') {
+        backendStarted = listComplete = true;
+        setBackendRegion(message.region);
+        const { sources } = message;
+        const same = sources.length === backendRows.length &&
+          sources.every((s, i) => s.host === backendRows[i].host && s.label === backendRows[i].label);
+        if (!same) {
+          backendRows.forEach(removeRow);
+          backendRows = sources.map(s => makeRow(s.group === 'auth' ? 'auth' : 'backend', s.label, s.host));
+          backendRows.forEach(resetRow);
+          renderSummary();
+        }
+        pointEarly();
+      } else if (message.type === 'result' && backendRows[message.index]) {
+        revealer.receive(backendRows[message.index], resultOf(message));
+      }
+    }).catch(e => {
+      if (!backendStarted) {
+        // No server list came back: show the backend itself as one failed row.
+        backendRows.forEach(removeRow);
+        setBackendRegion(null);
+        backendRows = [makeRow('backend', 'Vercel', new URL(BACKEND_URL, location.href).host, { whole: true })];
+        backendRows.forEach(resetRow);
+      }
+      listComplete = true;
+      for (const row of backendRows) revealer.receive(row, { error: e.message });
+      pointEarly();
+    });
+
+    await Promise.all([
+      Promise.all([fromBrowser, fromBackend]).then(() => { answeredAt = Date.now(); }),
+      sleep(MIN_SUSPENSE_MS).then(() => { suspenseOver = true; pointEarly(); }),
     ]);
-    const sources = [...backend.sources, ...fromBrowser];
-    backendRegion = backend.region;
-    knownSources = sources.map(({ group, label, host }) => ({ group, label, host }));
-
-    // The authoritative servers decide when they all agree: they are the source of truth,
-    // resolvers only cache what they said. Otherwise fall back to a majority vote.
-    const votes = new Map();
-    for (const { target } of sources) if (target) votes.set(target, (votes.get(target) || 0) + 1);
-    const ranked = [...votes].sort((a, b) => b[1] - a[1]);
-    const tied = ranked.length > 1 && ranked[0][1] === ranked[1][1];
-    const authTargets = new Set(sources.filter(s => s.group === 'auth' && s.target).map(s => s.target));
-    const winner = authTargets.size === 1 ? [...authTargets][0]
-      : ranked.length && !tied ? ranked[0][0] : null;
-
-    if (ranked.length) lastCheck = answeredAt;
-    renderSources(sources, winner, false);
-    if (!ranked.length) render(null, false, "Aucun serveur DNS n'a répondu");
-    else if (!winner) render(null, false, `Les serveurs DNS sont partagés : ${ranked.map(([t, n]) => `${t} (${n})`).join(', ')}`);
-    else if (cards.some(c => c.dataset.env === envOf(winner))) render(envOf(winner));
-    else render(null, false, `Le DNS pointe vers une cible inattendue : ${winner}`);
+    for (const row of allRows()) revealer.receive(row, { error: 'pas de réponse' });
+    await revealer.done();
+    if (conclude()) lastCheck = answeredAt;
   } catch (e) {
     render(null, false, `Échec de la vérification : ${e.message}`);
   } finally {
@@ -445,7 +729,8 @@ async function check() {
   }
 }
 
-$('main').addEventListener('click', check);
+$('dial').addEventListener('click', check);
+$('summary').addEventListener('click', check);
 check();
 </script>
 </body>
