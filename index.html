@@ -139,7 +139,7 @@
 
   <div id="rows">
     <section class="group" data-group="auth" hidden>
-      <div class="group-title">Serveurs faisant autorité</div><div class="list"></div>
+      <div class="group-title">Serveurs faisant autorité, depuis Vercel</div><div class="list"></div>
     </section>
     <section class="group" data-group="browser" hidden>
       <div class="group-title">Résolveurs publics, depuis votre navigateur</div><div class="list"></div>
@@ -469,10 +469,12 @@ function showResult(row) {
   renderSummary();
 }
 
+// Both server-side groups are asked from Vercel; their titles name the region.
 function setBackendRegion(region) {
   backendRegion = region;
-  sections.backend.querySelector('.group-title').textContent =
-    `Résolveurs publics, depuis Vercel${region ? ` (${REGION_NAMES[region] || region})` : ''}`;
+  const from = `depuis Vercel${region ? ` (${REGION_NAMES[region] || region})` : ''}`;
+  sections.auth.querySelector('.group-title').textContent = `Serveurs faisant autorité, ${from}`;
+  sections.backend.querySelector('.group-title').textContent = `Résolveurs publics, ${from}`;
 }
 
 const browserRows = RESOLVERS.map(r => makeRow('browser', r.label, new URL(r.url).host, { resolver: r }));
