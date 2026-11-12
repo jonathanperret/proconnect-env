@@ -1,7 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["cdg1"],
-  "functions": {
-    "api/dns.js": { "maxDuration": 15 }
-  }
-}
