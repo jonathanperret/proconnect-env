@@ -59,6 +59,13 @@
     font-variant-numeric: tabular-nums; color: var(--muted); transition: color .3s;
   }
   .env.active .rie { color: var(--accent); }
+  /* Circled "i": the RIE pairing is fixed text, not checked against DNS */
+  .env .info {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.3em; height: 1.3em; margin-left: .2em; vertical-align: .15em;
+    border: 1.5px solid currentColor; border-radius: 50%; cursor: help;
+    font: italic 700 .6em/1 Georgia, "Times New Roman", serif;
+  }
   .env .role {
     display: inline-block; margin-top: 12px; padding: 4px 12px; border-radius: 999px;
     font-size: clamp(12px, 3vw, 15px); font-weight: 600;
@@ -132,10 +139,14 @@
 
     <div class="envs">
       <div class="slot"><div class="env pending" data-env="02">
-        <div class="num">02</div><div class="rie">RIE: 01</div><div class="role">…</div>
+        <div class="num">02</div>
+        <div class="rie">RIE: 01 <span class="info" title="Non vérifié" aria-label="Non vérifié">i</span></div>
+        <div class="role">…</div>
       </div></div>
       <div class="slot"><div class="env pending" data-env="12">
-        <div class="num">12</div><div class="rie">RIE: 11</div><div class="role">…</div>
+        <div class="num">12</div>
+        <div class="rie">RIE: 11 <span class="info" title="Non vérifié" aria-label="Non vérifié">i</span></div>
+        <div class="role">…</div>
       </div></div>
     </div>
   </div>
@@ -737,7 +748,8 @@ async function check() {
   }
 }
 
-$('dial').addEventListener('click', check);
+// Tapping the "i" (to read its tooltip on a touch screen) should not re-run the check.
+$('dial').addEventListener('click', e => { if (!e.target.closest('.info')) check(); });
 $('summary').addEventListener('click', check);
 check();
 </script>
