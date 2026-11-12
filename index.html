@@ -615,6 +615,7 @@ function renderAge() {
       : s < 86400 ? relative.format(-Math.floor(s / 3600), 'hour')
       : relative.format(-Math.floor(s / 86400), 'day');
     text = `Dernière vérification ${ago}`;
+    if (nextCheckAt !== null) text += ` · prochaine dans ${Math.max(0, Math.ceil((nextCheckAt - Date.now()) / 1000))} s`;
   }
   $('age').textContent = text;
 }
@@ -701,10 +702,38 @@ async function retry(rows) {
   await revealer.done();
 }
 
+// The whole check re-runs by itself AUTO_REFRESH_MS after the previous one ended (a manual
+// check restarts the countdown). In a background tab it waits until the tab is shown again.
+// ?refresh=<seconds> changes the delay (at least 10 s); ?refresh=0 turns it off.
+const AUTO_REFRESH_MS = (() => {
+  const value = new URLSearchParams(location.search).get('refresh');
+  const seconds = Number(value);
+  if (value === null || value.trim() === '' || !Number.isFinite(seconds)) return 60_000;
+  return seconds <= 0 ? 0 : Math.max(10, seconds) * 1000;
+})();
+let autoTimer = null, nextCheckAt = null;
+
+function scheduleNextCheck() {
+  clearTimeout(autoTimer);
+  if (!AUTO_REFRESH_MS) return;
+  nextCheckAt = Date.now() + AUTO_REFRESH_MS;
+  autoTimer = setTimeout(() => {
+    nextCheckAt = null;
+    if (!document.hidden) check();
+  }, AUTO_REFRESH_MS);
+}
+
+document.addEventListener('visibilitychange', () => {
+  // a refresh was skipped while hidden
+  if (AUTO_REFRESH_MS && !document.hidden && nextCheckAt === null && !busy) check();
+});
+
 async function check() {
   if (busy) return;
   busy = true;
   generation++;
+  clearTimeout(autoTimer);
+  nextCheckAt = null;
   render(null, true);
   for (const row of allRows()) { row.retrying = false; resetRow(row); }
   renderSummary();
@@ -774,6 +803,7 @@ async function check() {
     render(null, false, `Échec de la vérification : ${e.message}`);
   } finally {
     busy = false;
+    scheduleNextCheck();
     renderAge();
   }
 }
