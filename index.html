@@ -53,6 +53,12 @@
     font-size: clamp(56px, 20vw, 120px); font-weight: 700; line-height: 1;
     font-variant-numeric: tabular-nums; color: var(--muted); transition: color .3s;
   }
+  /* The matching RIE environment, under the big number */
+  .env .rie {
+    margin-top: 6px; font-size: clamp(16px, 4.5vw, 24px); font-weight: 600; line-height: 1.2;
+    font-variant-numeric: tabular-nums; color: var(--muted); transition: color .3s;
+  }
+  .env.active .rie { color: var(--accent); }
   .env .role {
     display: inline-block; margin-top: 12px; padding: 4px 12px; border-radius: 999px;
     font-size: clamp(12px, 3vw, 15px); font-weight: 600;
@@ -126,10 +132,10 @@
 
     <div class="envs">
       <div class="slot"><div class="env pending" data-env="02">
-        <div class="num">02</div><div class="role">…</div>
+        <div class="num">02</div><div class="rie">RIE: 01</div><div class="role">…</div>
       </div></div>
       <div class="slot"><div class="env pending" data-env="12">
-        <div class="num">12</div><div class="role">…</div>
+        <div class="num">12</div><div class="rie">RIE: 11</div><div class="role">…</div>
       </div></div>
     </div>
   </div>
