@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Environnement actif</title>
+<title>ProConnect · environnement actif</title>
 <style>
   :root {
     --bg: #f6f7f9; --card: #fff; --text: #1b1f24; --muted: #667085; --border: #d5dae1;
@@ -317,6 +317,10 @@ function render(active, pending, error) {
   });
   $('error').hidden = !error;
   $('error').textContent = error || '';
+  // The tab shows the answer too, so it can be read without switching to the page.
+  const pra = cards.find((_, i) => i !== idx);
+  document.title = idx >= 0 ? `ProConnect · actif ${active}, PRA ${pra.dataset.env}`
+    : pending ? 'ProConnect · vérification…' : 'ProConnect · environnement inconnu';
 }
 
 // One chip per DNS server, grouped. While a check runs, the servers known from the
